@@ -1,0 +1,6 @@
+[App]
+Name=Taskbar Settings
+Executable=/bin/TaskbarSettings
+Category=Settings
+Description=Configure the taskbar service
+ExcludeFromSystemMenu=true
