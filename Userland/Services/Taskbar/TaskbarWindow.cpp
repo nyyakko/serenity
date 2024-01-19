@@ -160,21 +160,27 @@ void TaskbarWindow::update_applet_area()
     GUI::ConnectionToWindowManagerServer::the().async_set_applet_area_position(new_rect.location());
 }
 
-NonnullRefPtr<GUI::Button> TaskbarWindow::create_button(WindowIdentifier const& identifier)
+ErrorOr<NonnullRefPtr<GUI::Button>> TaskbarWindow::create_button(WindowIdentifier const& identifier)
 {
-    auto& button = m_task_button_container->add<TaskbarButton>(identifier);
-    button.set_min_size(20, 21);
-    button.set_max_size(140, 21);
-    button.set_text_alignment(Gfx::TextAlignment::CenterLeft);
-    button.set_icon(*m_default_icon);
+    auto button = TRY(TaskbarButton::create(identifier));
+    m_task_button_container->add_child(*button);
+
+    WindowList::the().for_each_window([&](::Window&) {
+    });
+
+    button->set_min_size(20, 21);
+    button->set_max_size(140, 21);
+    button->set_text_alignment(Gfx::TextAlignment::CenterLeft);
+    button->set_icon(*m_default_icon);
+
     return button;
 }
 
-void TaskbarWindow::add_window_button(::Window& window, WindowIdentifier const& identifier)
+ErrorOr<void> TaskbarWindow::add_window_button(::Window& window, WindowIdentifier const& identifier)
 {
     if (window.button())
-        return;
-    window.set_button(create_button(identifier));
+        return {};
+    window.set_button(TRY(create_button(identifier)));
     auto* button = window.button();
     button->on_click = [window = &window, identifier](auto) {
         if (window->is_minimized() || !window->is_active())
@@ -182,6 +188,8 @@ void TaskbarWindow::add_window_button(::Window& window, WindowIdentifier const& 
         else if (!window->is_blocked())
             GUI::ConnectionToWindowManagerServer::the().async_set_window_minimized(identifier.client_id(), identifier.window_id(), true);
     };
+
+    return {};
 }
 
 void TaskbarWindow::remove_window_button(::Window& window, bool was_removed)
@@ -238,6 +246,12 @@ void TaskbarWindow::wm_event(GUI::WMEvent& event)
 {
     WindowIdentifier identifier { event.client_id(), event.window_id() };
     switch (event.type()) {
+    // case GUI::Event::WM_MouseEnteredHoverArea:
+    // case GUI::Event::WM_MouseLeftHoverArea: {
+    //     dbgln("FIXME! :^(");
+    //     break;
+    // }
+
     case GUI::Event::WM_WindowRemoved: {
         if constexpr (EVENT_DEBUG) {
             auto& removed_event = static_cast<GUI::WMWindowRemovedEvent&>(event);
@@ -308,8 +322,13 @@ void TaskbarWindow::wm_event(GUI::WMEvent& event)
         window.set_minimized(changed_event.is_minimized());
         window.set_progress(changed_event.progress());
         window.set_workspace(changed_event.workspace_row(), changed_event.workspace_column());
-        add_window_button(window, identifier);
-        update_window_button(window, window.is_active());
+        auto result = add_window_button(window, identifier);
+
+        if (!result.is_error())
+            update_window_button(window, window.is_active());
+        else
+            dbgln("failed to create a taskbar button for {}", window.title());
+
         break;
     }
     case GUI::Event::WM_AppletAreaSizeChanged: {
